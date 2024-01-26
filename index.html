@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Fractional Flow Analysis</title>
+    <!-- Bootstrap CSS -->
+    <link
+      rel="stylesheet"
+      href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css"
+    />
+    <!-- Chart.js library -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- xlsx library for parsing Excel files -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx"></script>
+    <style>
+      body {
+        background-color: #f8f9fa;
+        font-family: 'Arial', sans-serif;
+      }
+
+      .container {
+        max-width: 800px;
+        margin: auto;
+        background-color: #ffffff;
+        padding: 20px;
+        box-shadow: 0px 0px 10px 0px rgba(0, 0, 0, 0.1);
+        border-radius: 8px;
+        margin-top: 50px;
+      }
+
+      .state-button {
+        width: 150px;
+        margin: 5px;
+        transition: background-color 0.3s ease-in-out;
+      }
+
+      .state-button.active {
+        background-color: #007bff;
+        color: #ffffff;
+      }
+
+      #area-graph-container {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 60vh;
+        margin-top: 20px;
+      }
+
+      #area-graph {
+        width: 100%;
+        height: auto;
+        max-width: 600px;
+      }
+
+      h2 {
+        color: #007bff;
+      }
+
+      label {
+        font-weight: bold;
+        margin-bottom: 10px;
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container mt-5">
+      <div class="text-center">
+        <h2>Fractional Flow Analysis</h2>
+
+        <label>Select Time-Steps:</label><br />
+        <button
+          id="state1"
+          class="btn btn-outline-primary state-button"
+          data-index="2"
+        >
+          nt = 25 days
+        </button>
+        <button
+          id="state2"
+          class="btn btn-outline-primary state-button"
+          data-index="5"
+        >
+          nt = 50 days
+        </button>
+        <button
+          id="state3"
+          class="btn btn-outline-primary state-button"
+          data-index="8"
+        >
+          nt = 75 days
+        </button>
+        <button
+          id="state4"
+          class="btn btn-outline-primary state-button"
+          data-index="11"
+        >
+          nt = 100 days
+        </button>
+
+        <div id="area-graph-container" class="mt-4">
+          <canvas id="area-graph"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      let myChart;
+
+      const url = '/src/flow.xlsx';
+      let sheet0;
+      let second_sheet;
+      let first_sheet;
+      let selectedStateColumns = [];
+
+      document.addEventListener('DOMContentLoaded', async function () {
+        const file = await (await fetch(url)).arrayBuffer();
+        const workbook = XLSX.read(file);
+        sheet0 = workbook.Sheets[workbook.SheetNames[0]];
+        second_sheet = workbook.Sheets[workbook.SheetNames[1]];
+        first_sheet = workbook.Sheets[workbook.SheetNames[2]];
+
+        // Initial plot
+        plotGraph();
+      });
+
+      // Listen for button clicks
+      document.querySelectorAll('.state-button').forEach(function (button) {
+        button.addEventListener('click', function () {
+          this.classList.toggle('active');
+          plotGraph();
+        });
+      });
+
+      function plotGraph() {
+        try {
+          selectedStateColumns = getSelectedStateColumns();
+
+          const sheet0Data = XLSX.utils.sheet_to_json(sheet0, { header: 1 });
+          const sheet1Data = XLSX.utils.sheet_to_json(second_sheet, {
+            header: 1,
+          });
+
+          const labels = sheet0Data.map((_, index) => index + 1);
+
+          // Plot data from Sheet 0 as a background area graph
+          const sheet0Dataset = {
+            label: 'Initial Sw',
+            data: sheet0Data.map((row) => row[1]),
+            fill: true,
+            backgroundColor: 'rgba(255, 0, 0, 0.2)',
+            borderColor: 'rgba(255, 0, 0, 1)',
+            borderWidth: 1,
+          };
+
+          // Plot data from selected state columns from Sheet 1
+          const sheet1Datasets = selectedStateColumns.map((stateColumn) => {
+            let label;
+
+            // Example: Use a condition to set the label based on stateColumn properties
+            if (stateColumn.stateIndex === 2) {
+              label = 'Timestep(nt = 25 days)';
+            } else if (stateColumn.stateIndex === 5) {
+              label = 'Timestep(nt = 50 days)';
+            } else if (stateColumn.stateIndex === 8) {
+              label = 'Timestep(nt = 75 days)';
+            } else {
+              label = 'Timestep(nt = 100 days)';
+            }
+            return {
+              label: label,
+              data: sheet1Data.map((row) => row[stateColumn.index]),
+              fill: true,
+              backgroundColor: getRandomColor(),
+              borderColor: getRandomColor(),
+              borderWidth: 1,
+            };
+          });
+
+          const ctx = document.getElementById('area-graph').getContext('2d');
+
+          // If the chart instance doesn't exist, create a new one
+          if (!myChart) {
+            myChart = new Chart(ctx, {
+              type: 'line',
+              data: {
+                labels: labels,
+                datasets: [sheet0Dataset, ...sheet1Datasets],
+              },
+              options: {
+                scales: {
+                  x: {
+                    type: 'linear',
+                    position: 'bottom',
+                    title: {
+                      display: true,
+                      text: 'Distance X(ft)',
+                    },
+                  },
+                  y: {
+                    type: 'linear',
+                    position: 'left',
+                    title: {
+                      display: true,
+                      text: 'Sw',
+                    },
+                  },
+                },
+                animation: {
+                  duration: 1000,
+                  easing: 'easeInOutQuart',
+                  onProgress: function (animation) {
+                    if (animation.currentStep === animation.numSteps) {
+                      console.log('Animation completed');
+                    }
+                  },
+                },
+              },
+            });
+          } else {
+            myChart.data.datasets.forEach((existingDataset, index) => {
+              if (existingDataset.label === 'Initial Sw') {
+                existingDataset.data = sheet0Data.map((row) => row[1]);
+              } else {
+                const foundDataset = sheet1Datasets.find(
+                  (dataset) => dataset.label === existingDataset.label
+                );
+                if (foundDataset) {
+                  existingDataset.data = foundDataset.data;
+                } else {
+                  myChart.data.datasets.splice(index, 1);
+                }
+              }
+            });
+
+            sheet1Datasets.forEach((newDataset) => {
+              if (
+                !myChart.data.datasets.some(
+                  (existingDataset) =>
+                    existingDataset.label === newDataset.label
+                )
+              ) {
+                myChart.data.datasets.push(newDataset);
+              }
+            });
+
+            myChart.options.animation.onProgress = function (animation) {
+              if (animation.currentStep === animation.numSteps) {
+                console.log('Exit animation completed');
+              }
+            };
+
+            myChart.update();
+          }
+        } catch (error) {
+          console.error('Error plotting graph:', error);
+        }
+      }
+
+      function getSelectedStateColumns() {
+        const buttons = document.querySelectorAll('.state-button.active');
+        return Array.from(buttons).map((button) => {
+          const stateIndex = parseInt(button.dataset.index);
+          const xAxisIndex = stateIndex - 2;
+          const yAxisIndex = stateIndex - 1;
+          return {
+            stateIndex: stateIndex,
+            xAxisIndex: xAxisIndex,
+            yAxisIndex: yAxisIndex,
+            index: yAxisIndex,
+          };
+        });
+      }
+
+      function getRandomColor() {
+        const letters = '0123456789ABCDEF';
+        let color = '#';
+        for (let i = 0; i < 6; i++) {
+          color += letters[Math.floor(Math.random() * 16)];
+        }
+        return color;
+      }
+    </script>
+  </body>
+</html>
